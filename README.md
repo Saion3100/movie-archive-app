@@ -1,36 +1,75 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Cinema Stub Archive (MVP)
 
-## Getting Started
+映画ファンのための、デジタル半券自動生成・アーカイブアプリケーション。
+Next.js、Supabase、TMDb APIを組み合わせ、紙のチケットに印字されたQRコードの数値から、美しく色褪せないデジタル資産をワンタップで構築します。
 
-First, run the development server:
+## 🚀 クイックスタート (Anti-Gravity / ローカル開発環境)
 
+### 1. 依存関係のインストール
+プロジェクトのルートディレクトリで以下を実行します。
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm install @supabase/ssr @supabase/supabase-js
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 2. 環境変数の設定 (.env.local)
+プロジェクトのルート直下に .env.local ファイルを作成し、以下の鍵を設定してください。
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+コード スニペット
+# Supabase接続情報 (Project Settings > API から取得)
+NEXT_PUBLIC_SUPABASE_URL=[https://your-project-id.supabase.co](https://your-project-id.supabase.co)
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+# TMDb API読込トークン (TMDbのSettings > API から取得した長いBearerトークン)
+TMDB_API_READ_ACCESS_TOKEN=your-tmdb-bearer-token
 
-## Learn More
+### 3. 開発サーバーの起動
+```
+npm run dev
+```
+起動後、 http://localhost:3000 にアクセスすると、チケットのスキャン・パース、およびポスターの自動検索を体験できるダッシュボードが開きます。
 
-To learn more about Next.js, take a look at the following resources:
+📁 ディレクトリ構造
+movie-archive-app/
+├── src/
+│   ├── app/
+│   │   ├── api/
+│   │   │   └── search/
+│   │   │       └── route.ts     # TMDb映画検索APIエンドポイント
+│   │   ├── layout.tsx
+│   │   └── page.tsx             # コアUI（検証・プレビュー画面）
+│   └── utils/
+│       └── ticketParser.ts      # 劇場コード解析・バリデーションエンジン
+├── .env.local                   # 環境変数（Git管理外）
+├── REQUIREMENTS.md              # 要求分析
+├── ARCHITECTURE.md              # 技術構成・データ設計
+└── FUNCTIONAL_DESIGN.md         # 機能設計
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+🎯 テスト用サンプルデータ
+画面の挙動を確認する際は、以下のあぶり出し済み生データをご利用ください。
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+京成ローザ (劇場設定: 8001)
 
-## Deploy on Vercel
+8001260530047300100485335 (2026/05/30上映分)
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+T・ジョイ蘇我 (劇場設定: 5362)
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+536251452789746 (予約シリアル。手動でタイトル検索が必要です)
+
+USシネマ (劇場設定: 0008)
+
+00020008758349202508312020155【4DX2D】劇場版 鬼 WEB4DXレイトショー 01 
+
+## 1. 劇場別・QRコードデータ構造 統合マトリクス
+
+提供されたサンプルデータを基に、各系列のデータ構造とチケット情報の対応関係を一覧化したマスター表です。
+
+| 劇場系列 | 劇場コード | 上映日時 | スクリーン | 座席 | 券種 | 作品名（データ内表記） | QRコード生データ（バーコードデータ） |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **京成ローザ** | `8001` | 05/30(土) 18:45 | イースト② | C-6 | 大学生 | 劇場版モノノ怪 | `8001260530047300100485335` |
+| **京成ローザ** | `8001` | 04/13(月) 14:50 | イースト④ | E-10 | 大学生 | 名探偵コナン | `8001260413023900100443444` |
+| **T・ジョイ** | `5351` | 11/08(土) 19:30 | シアター８ | D-7 | — | 劇場先行版 アニメ『ゴールデンカムイ』 | `535172565589748` |
+| **T・ジョイ** | `5362` | 07/25(金) 18:55 | シアター６ | L-11 | — | 劇場版アニメ『ルックバック』 | `536251452789746` |
+| **USシネマ** | `0009` (共通0002) | 03/22(日) 08:50 | スクリーン4DX | D-10 | WEB4DX大学生 | 【4DX2D】ゴールデン | `00020009040668202603220850121【4DX2D】ゴールデン WEB4DX大学生 00` |
+| **USシネマ** | `0008` (共通0002) | 08/31(月) 20:20 | スクリーン4DX | A-11 | WEB4DXレイトショー | 【4DX2D】劇場版 鬼 | `00020008758349202508312020155【4DX2D】劇場版 鬼 WEB4DXレイトショー 01` |
+
