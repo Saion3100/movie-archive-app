@@ -1,247 +1,304 @@
 // src/app/page.tsx
 'use client';
+
 import { useState, useEffect } from 'react';
-import { parseQRCode, validateTicket, ParsedTicket, ValidationResult } from '../utils/ticketParser';
+import Link from 'next/link';
+import { getTickets, saveTicket, isSupabaseConfigured, MovieTicket } from '../utils/db';
+import { Plus, Camera, PieChart, Star, MapPin, Calendar, Film, Award, Sparkles, Database } from 'lucide-react';
 
-interface TMDBMovie {
-  id: number;
-  title: string;
-  releaseDate: string;
-  posterUrl: string | null;
-  overview: string;
-}
+const INITIAL_MOCK_TICKETS = [
+  {
+    user_id: '00000000-0000-0000-0000-000000000000',
+    theater_name: '京成ローザ⑩',
+    screen_name: 'イースト④',
+    show_timestamp: '2026-04-13T14:50:00.000Z',
+    movie_title: '名探偵コナン 100万ドルの五稜星',
+    poster_path: 'https://image.tmdb.org/t/p/w500/kSMM1c1F4245g396e94T6t6g6M8.jpg',
+    seat_raw: 'E-10',
+    seat_row: 'E',
+    seat_number: 10,
+    rating: 4.5,
+    memo: 'コナンのアクションが凄まじかった！イースト4のE列は視線が少し上向きになるけどスクリーンが近くて迫力満点。',
+    raw_ocr_text: '8001260413023900100443444'
+  },
+  {
+    user_id: '00000000-0000-0000-0000-000000000000',
+    theater_name: 'TOHOシネマズ新宿',
+    screen_name: 'SCREEN 7',
+    show_timestamp: '2026-06-22T13:30:00.000Z',
+    movie_title: 'シン・エヴァンゲリオン劇場版',
+    poster_path: 'https://image.tmdb.org/t/p/w500/wz7nS5ZlYkZzSux2p6q9F2e61yG.jpg',
+    seat_raw: 'J-12',
+    seat_row: 'J',
+    seat_number: 12,
+    rating: 5.0,
+    memo: 'ついに完結。新宿TOHOのスクリーン7の中央J列は目の高さがスクリーン中央と完全に一致するベストポジション！',
+    raw_ocr_text: 'ＴＯＨＯシネマズ新宿\nスクリーン7\nJ-12\n一般'
+  },
+  {
+    user_id: '00000000-0000-0000-0000-000000000000',
+    theater_name: '109シネマズ二子玉川',
+    screen_name: 'シアター3 (IMAX)',
+    show_timestamp: '2026-06-20T18:00:00.000Z',
+    movie_title: 'マッドマックス：フュリオサ',
+    poster_path: 'https://image.tmdb.org/t/p/w500/h8g6Qd7z44mUu5Wn4M4q3X4J4X4.jpg',
+    seat_raw: 'F-8',
+    seat_row: 'F',
+    seat_number: 8,
+    rating: 4.5,
+    memo: 'IMAXの爆音でフュリオサの怒りが轟いた。シアター3のF列は結構前寄りだけど、視界いっぱいにスクリーンが広がって超没入できる！',
+    raw_ocr_text: '109シネマズ二子玉川\nシアター3\nF-8\nIMAX'
+  }
+];
 
-export default function Home() {
-  const [rawInput, setRawInput] = useState('');
-  const [targetTheater, setTargetTheater] = useState('8001');
-  const [parsedData, setParsedData] = useState<ParsedTicket | null>(null);
-  const [validation, setValidation] = useState<ValidationResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
+export default function DashboardPage() {
+  const [tickets, setTickets] = useState<MovieTicket[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [dbType, setDbType] = useState<'Supabase' | 'LocalStorage'>('LocalStorage');
 
-  // TMDb検索用のステート
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<TMDBMovie[]>([]);
-  const [selectedMovie, setSelectedMovie] = useState<TMDBMovie | null>(null);
-  const [isSearching, setIsSearching] = useState(false);
+  useEffect(() => {
+    async function initAndLoad() {
+      try {
+        const isSupa = isSupabaseConfigured();
+        setDbType(isSupa ? 'Supabase' : 'LocalStorage');
 
-  const handleScan = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setParsedData(null);
-    setValidation(null);
-    setSearchResults([]);
-    setSelectedMovie(null);
-
-    try {
-      // 1. チケットデータのパース & バリデーション
-      const result = parseQRCode(rawInput);
-      setParsedData(result);
-      const validResult = validateTicket(result, targetTheater);
-      setValidation(validResult);
-
-      // 2. USシネマなど、最初からタイトルの一部が取れている場合は自動検索をかける
-      if (result.movieTitleShort) {
-        setSearchQuery(result.movieTitleShort);
-        searchMovie(result.movieTitleShort);
-      } else {
-        setSearchQuery(''); // ローザやT・ジョイは空にしてユーザー入力を待つ
-      }
-    } catch (err: any) {
-      setError(err.message || '解析中にエラーが発生しました。');
-    }
-  };
-
-  // TMDb APIを叩く関数
-  const searchMovie = async (query: string) => {
-    if (!query.trim()) return;
-    setIsSearching(true);
-    try {
-      const res = await fetch(`/api/search?query=${encodeURIComponent(query)}`);
-      const data = await res.json();
-      if (data.movies) {
-        setSearchResults(data.movies);
-        // 1件しかヒットしなかった、または自動検索の場合は1件目を仮選択
-        if (data.movies.length > 0) {
-          setSelectedMovie(data.movies[0]);
+        let loadedTickets = await getTickets();
+        
+        // If empty, populate initial mock tickets for amazing first experience!
+        if (loadedTickets.length === 0) {
+          console.log('Populating dashboard with beautiful sample tickets...');
+          for (const item of INITIAL_MOCK_TICKETS) {
+            await saveTicket(item);
+          }
+          loadedTickets = await getTickets();
         }
+        
+        setTickets(loadedTickets);
+      } catch (e) {
+        console.error('Failed to load tickets:', e);
+      } finally {
+        setLoading(false);
       }
-    } catch (err) {
-      console.error('映画の検索に失敗しました', err);
-    } finally {
-      setIsSearching(false);
     }
-  };
+    initAndLoad();
+  }, []);
+
+  // Compute fast stats
+  const totalCount = tickets.length;
+  
+  // Preferred Seat zone
+  const ticketsWithSeats = tickets.filter(t => t.seat_row);
+  let favZone = '未特定';
+  if (ticketsWithSeats.length > 0) {
+    let front = 0, mid = 0, back = 0;
+    ticketsWithSeats.forEach(t => {
+      const row = t.seat_row!.toUpperCase();
+      if (row >= 'A' && row <= 'E') front++;
+      else if (row >= 'F' && row <= 'J') mid++;
+      else back++;
+    });
+    
+    if (front >= mid && front >= back) favZone = '前方エリア';
+    else if (mid >= front && mid >= back) favZone = '中央エリア';
+    else favZone = '後方エリア';
+  }
+
+  // Favorite Theater
+  let favTheater = '未特定';
+  if (tickets.length > 0) {
+    const counts: Record<string, number> = {};
+    tickets.forEach(t => {
+      const cleanName = t.theater_name.split(' ')[0]; // Group by brand prefix
+      counts[cleanName] = (counts[cleanName] || 0) + 1;
+    });
+    let max = 0;
+    Object.entries(counts).forEach(([name, count]) => {
+      if (count > max) {
+        max = count;
+        favTheater = name;
+      }
+    });
+  }
 
   return (
-    <main className="min-h-screen bg-slate-950 text-slate-100 p-8 family-sans">
-      <div className="max-w-4xl mx-auto space-y-8">
+    <main className="min-h-screen bg-slate-950 text-slate-100 p-6 pb-24 relative flex flex-col items-center">
+      <div className="w-full max-w-md flex flex-col space-y-6">
         
-        <header className="border-b border-amber-500/30 pb-4 text-center">
-          <h1 className="text-3xl font-bold tracking-wider text-amber-500">Cinema Stub Archive</h1>
-          <p className="text-sm text-slate-400 mt-1">MVP ポスター連動ダッシュボード</p>
+        {/* Header Title Section */}
+        <header className="flex flex-col space-y-1">
+          <div className="flex items-center justify-between">
+            <h1 className="text-2xl font-extrabold tracking-wider bg-gradient-to-r from-amber-400 to-yellow-500 bg-clip-text text-transparent">
+              Movie棚
+            </h1>
+            <div className="flex items-center gap-1.5 text-[10px] text-slate-400 bg-slate-900 border border-slate-800/80 px-2.5 py-1 rounded-full font-mono">
+              <Database className="w-3 h-3 text-amber-500" />
+              <span>{dbType}</span>
+            </div>
+          </div>
+          <p className="text-[11px] text-slate-500">一生色褪せない、あなただけのデジタル半券コレクション</p>
         </header>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        {/* Dashboard Statistics Header */}
+        <div className="grid grid-cols-3 gap-3">
           
-          {/* 左カラム：入力フォーム */}
-          <div className="space-y-4">
-            <form onSubmit={handleScan} className="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-4 shadow-xl">
-              <h2 className="text-lg font-bold text-slate-200 border-l-4 border-amber-500 pl-2">1. チケットスキャン</h2>
-              <div>
-                <label className="block text-sm font-medium text-slate-400 mb-2">検証する劇場（入場口）の設定</label>
-                <select 
-                  value={targetTheater} 
-                  onChange={(e) => setTargetTheater(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-2 text-slate-200 focus:outline-none focus:border-amber-500"
-                >
-                  <option value="8001">京成ローザ (8001)</option>
-                  <option value="5362">T・ジョイ蘇我 (5362)</option>
-                  <option value="0008">USシネマ (0008)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-400 mb-2">QRコード生データ（文字列）</label>
-                <input
-                  type="text"
-                  value={rawInput}
-                  onChange={(e) => setRawInput(e.target.value)}
-                  placeholder="例: 8001260530047300100485335"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-3 text-amber-100 font-mono focus:outline-none focus:border-amber-500 text-sm"
-                  required
-                />
-              </div>
-
-              <button type="submit" className="w-full bg-amber-500 text-slate-950 font-bold py-3 rounded-lg hover:bg-amber-400 transition-all">
-                データを解析
-              </button>
-            </form>
-
-            {error && (
-              <div className="bg-red-950/50 border border-red-800/50 p-4 rounded-xl text-red-200 text-sm">⚠️ {error}</div>
-            )}
-
-            {/* パース成功後に表示される映画検索窓 */}
-            {parsedData && (
-              <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-4 shadow-xl">
-                <h2 className="text-lg font-bold text-slate-200 border-l-4 border-amber-500 pl-2">2. 作品データの紐付け</h2>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="映画のタイトルを入力（例: 鬼滅）"
-                    className="flex-grow bg-slate-950 border border-slate-800 rounded-lg px-4 py-2 text-slate-200 focus:outline-none focus:border-amber-500 text-sm"
-                  />
-                  <button 
-                    onClick={() => searchMovie(searchQuery)}
-                    className="bg-slate-800 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700"
-                  >
-                    検索
-                  </button>
-                </div>
-
-                {/* 検索結果リスト */}
-                {searchResults.length > 0 && (
-                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                    {searchResults.map((movie) => (
-                      <button
-                        key={movie.id}
-                        onClick={() => setSelectedMovie(movie)}
-                        className={`w-full text-left p-3 rounded-lg border text-xs transition-all flex justify-between items-center ${selectedMovie?.id === movie.id ? 'bg-amber-500/10 border-amber-500 text-amber-200' : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'}`}
-                      >
-                        <div>
-                          <div className="font-bold text-sm text-slate-200">{movie.title}</div>
-                          <div className="text-slate-500 mt-0.5">公開日: {movie.releaseDate || '不明'}</div>
-                        </div>
-                        <span className="text-xs text-amber-500">選択</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+          <div className="bg-slate-900/40 border border-slate-900 p-3 rounded-2xl flex flex-col justify-between aspect-square">
+            <span className="text-[9px] text-slate-500 font-bold block uppercase tracking-wider">Tickets</span>
+            <div className="mt-auto">
+              <span className="text-2xl font-extrabold text-slate-100 font-mono">{totalCount}</span>
+              <span className="text-[9px] text-slate-500 font-bold ml-1 font-mono">枚</span>
+            </div>
           </div>
 
-          {/* 右カラム：エモいデジタルチケットのプレビュー */}
-          <div className="flex flex-col justify-start">
-            {parsedData ? (
-              <div className="space-y-4 sticky top-8">
-                <div className="text-xs font-semibold text-slate-500 uppercase tracking-widest">LIVE TICKET PREVIEW</div>
-                
-                {/* 縦型の擬似デジタル半券 */}
-                <div className="w-full max-w-sm mx-auto bg-black border border-slate-800 rounded-3xl overflow-hidden shadow-2xl relative aspect-[2/3] flex flex-col justify-between">
-                  
-                  {/* 背景のうっすらポスター画像ぼかし */}
-                  {selectedMovie?.posterUrl && (
-                    <div 
-                      className="absolute inset-0 opacity-20 bg-cover bg-center blur-md scale-110"
-                      style={{ backgroundImage: `url(${selectedMovie.posterUrl})` }}
-                    />
-                  )}
+          <div className="bg-slate-900/40 border border-slate-900 p-3 rounded-2xl flex flex-col justify-between aspect-square">
+            <span className="text-[9px] text-slate-500 font-bold block uppercase tracking-wider">Fav Theater</span>
+            <div className="mt-auto">
+              <span className="text-xs font-bold text-amber-400 truncate block">{favTheater}</span>
+            </div>
+          </div>
 
-                  {/* 上部：映画ポスターエリア */}
-                  <div className="relative flex-grow bg-slate-900/40 flex items-center justify-center overflow-hidden p-6">
-                    {selectedMovie?.posterUrl ? (
-                      <img 
-                        src={selectedMovie.posterUrl} 
-                        alt="Movie Poster" 
-                        className="h-full object-contain rounded-xl shadow-xl border border-slate-700/30 relative z-10"
-                      />
-                    ) : (
-                      <div className="text-slate-600 text-xs text-center border-2 border-dashed border-slate-800 p-8 rounded-xl">
-                        右側で作品を選択すると<br />ポスターがここにファイリングされます
-                      </div>
-                    )}
-                  </div>
-
-                  {/* チケットの「ミシン目」の境界線 */}
-                  <div className="relative h-px bg-dashed bg-gradient-to-r from-transparent via-slate-700 to-transparent my-0 z-20 flex justify-between items-center">
-                    <div className="w-4 h-4 bg-slate-950 rounded-full -ml-2 border-r border-slate-800" />
-                    <div className="w-4 h-4 bg-slate-950 rounded-full -mr-2 border-l border-slate-800" />
-                  </div>
-
-                  {/* 下部：上映データエリア（もぎり後の半券部分） */}
-                  <div className="p-6 bg-slate-900/80 backdrop-blur-md relative z-10 space-y-4">
-                    <div>
-                      <span className="text-[10px] text-amber-500 font-bold tracking-widest block uppercase">THEATER</span>
-                      <h3 className="text-lg font-bold text-slate-100 truncate">{parsedData.theaterName}</h3>
-                    </div>
-
-                    <div>
-                      <span className="text-[10px] text-slate-500 font-bold tracking-widest block uppercase">MOVIE TITLE</span>
-                      <h4 className="text-sm font-bold text-amber-200 truncate">{selectedMovie ? selectedMovie.title : '未特定の作品'}</h4>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <span className="text-[10px] text-slate-500 font-bold tracking-widest block uppercase">DATE / TIME</span>
-                        <span className="font-mono text-xs font-semibold text-slate-300">
-                          {parsedData.showTimestamp ? new Date(parsedData.showTimestamp).toLocaleDateString('ja-JP', {month: '2-digit', day: '2-digit'}) : '当日照会'}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-slate-500 font-bold tracking-widest block uppercase">SEAT</span>
-                        <span className="font-mono text-xs font-semibold text-slate-300">{parsedData.reserveId.split('-')[1] || '自由席'}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* バリデーション状態の簡易インジケータ */}
-                <div className={`p-3 rounded-xl text-center text-xs border ${validation?.isValid ? 'bg-emerald-950/20 border-emerald-800/30 text-emerald-400' : 'bg-rose-950/20 border-rose-800/30 text-rose-400'}`}>
-                  {validation?.reason}
-                </div>
-              </div>
-            ) : (
-              <div className="h-full min-h-[400px] border-2 border-dashed border-slate-800 rounded-3xl flex items-center justify-center text-slate-600 text-sm">
-                左側からチケットデータを読み込ませてください
-              </div>
-            )}
+          <div className="bg-slate-900/40 border border-slate-900 p-3 rounded-2xl flex flex-col justify-between aspect-square">
+            <span className="text-[9px] text-slate-500 font-bold block uppercase tracking-wider">Fav Zone</span>
+            <div className="mt-auto">
+              <span className="text-xs font-bold text-slate-300 block">{favZone}</span>
+            </div>
           </div>
 
         </div>
+
+        {/* Quick Actions Panel */}
+        <div className="grid grid-cols-2 gap-3">
+          <Link
+            href="/scan"
+            className="bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-bold py-3 px-4 rounded-2xl transition-all text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-amber-500/5 group"
+          >
+            <Camera className="w-4 h-4 group-hover:scale-105 transition-transform" />
+            新規チケットを追加
+          </Link>
+          <Link
+            href="/analytics"
+            className="bg-slate-900 border border-slate-800 hover:border-amber-500/20 text-slate-200 hover:text-amber-400 font-bold py-3 px-4 rounded-2xl transition-all text-xs flex items-center justify-center gap-1.5"
+          >
+            <PieChart className="w-4 h-4" />
+            お好み座席分析
+          </Link>
+        </div>
+
+        {/* Movie Shelf Grid */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xs font-bold uppercase tracking-widest text-slate-500">My Collection Shelf</h2>
+            <span className="text-[10px] text-slate-600 font-mono">上映日降順</span>
+          </div>
+
+          {loading ? (
+            <div className="flex flex-col items-center justify-center py-20 gap-3">
+              <div className="w-8 h-8 border-3 border-amber-500/10 border-t-amber-500 rounded-full animate-spin"></div>
+              <span className="text-[10px] text-slate-500 font-mono">Loading Shelf...</span>
+            </div>
+          ) : tickets.length === 0 ? (
+            <div className="border-2 border-dashed border-slate-900 rounded-3xl p-10 text-center flex flex-col items-center justify-center space-y-4">
+              <Film className="w-10 h-10 text-slate-700" />
+              <div className="space-y-1">
+                <h3 className="text-sm font-semibold text-slate-300">映画棚は空っぽです</h3>
+                <p className="text-xs text-slate-500">最初のチケットをスキャンして、デジタル半券をコレクションしましょう！</p>
+              </div>
+              <Link 
+                href="/scan" 
+                className="text-xs bg-amber-500 hover:bg-amber-400 text-slate-950 px-4 py-2 rounded-xl font-bold transition-colors"
+              >
+                スキャンを開始する
+              </Link>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-4">
+              {tickets.map((ticket) => {
+                const dateObj = new Date(ticket.show_timestamp);
+                const dateStr = !isNaN(dateObj.getTime())
+                  ? dateObj.toLocaleDateString('ja-JP', { month: '2-digit', day: '2-digit' })
+                  : '—';
+
+                return (
+                  <Link 
+                    href={`/tickets/${ticket.id}`} 
+                    key={ticket.id}
+                    className="group flex flex-col bg-slate-900/40 border border-slate-900 hover:border-slate-800/80 rounded-2xl overflow-hidden transition-all duration-300 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-amber-500/2"
+                  >
+                    {/* Poster View */}
+                    <div className="aspect-[3/4] relative overflow-hidden bg-slate-950 shrink-0">
+                      {ticket.poster_path ? (
+                        <img 
+                          src={ticket.poster_path} 
+                          alt="" 
+                          className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-500" 
+                        />
+                      ) : (
+                        <div className="w-full h-full flex flex-col items-center justify-center text-slate-800 p-4 space-y-1">
+                          <Film className="w-7 h-7" />
+                          <span className="text-[9px] uppercase font-bold text-slate-700">No Image</span>
+                        </div>
+                      )}
+                      
+                      {/* Top Overlay Badge for date & rating */}
+                      <div className="absolute top-2 left-2 flex flex-col gap-1 z-10">
+                        <span className="text-[9px] bg-slate-950/80 backdrop-blur-md text-amber-400 px-1.5 py-0.5 rounded font-bold font-mono shadow-md border border-slate-900">
+                          {dateStr}
+                        </span>
+                      </div>
+                      
+                      <div className="absolute top-2 right-2 z-10">
+                        <span className="text-[9px] bg-slate-950/80 backdrop-blur-md text-slate-200 px-1.5 py-0.5 rounded font-bold font-mono shadow-md border border-slate-900 flex items-center gap-0.5">
+                          <Star className="w-2.5 h-2.5 text-amber-500 fill-amber-500 shrink-0" />
+                          {ticket.rating.toFixed(1)}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Perforation Line Border */}
+                    <div className="relative h-px bg-slate-950 flex justify-between items-center my-0 z-20">
+                      <div className="w-2.5 h-2.5 bg-slate-950 rounded-full -ml-1.5 border-r border-slate-900/60" />
+                      <div className="w-full border-t border-dashed border-slate-900" />
+                      <div className="w-2.5 h-2.5 bg-slate-950 rounded-full -mr-1.5 border-l border-slate-900/60" />
+                    </div>
+
+                    {/* Stub Text View */}
+                    <div className="p-3 space-y-1 bg-slate-900/20 flex-grow flex flex-col justify-between">
+                      <h4 className="text-xs font-bold text-slate-200 truncate group-hover:text-amber-400 transition-colors">
+                        {ticket.movie_title}
+                      </h4>
+                      <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono mt-0.5">
+                        <span className="truncate max-w-[80px]">{ticket.theater_name.split(' ')[0]}</span>
+                        <span className="text-amber-200 font-bold">{ticket.seat_raw || '自由席'}</span>
+                      </div>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Setup API Key Instructions Box */}
+        <div className="bg-slate-900/30 border border-slate-900 rounded-3xl p-4 space-y-3">
+          <div className="flex items-center gap-2 text-slate-400">
+            <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+            <h3 className="text-xs font-bold uppercase tracking-wider">設定・キーガイド</h3>
+          </div>
+          <p className="text-[10px] text-slate-500 leading-relaxed">
+            現在、キーが未設定のため**ローカル模擬モード**で動作しています。本番環境でGoogle Vision OCRやTMDb APIを接続するには、ルートディレクトリに `.env.local` ファイルを作成し、必要なAPIキーを設定してください。詳細は <code className="text-amber-500 font-mono">README.md</code> をご参照ください。
+          </p>
+        </div>
+
       </div>
+
+      {/* Floating Action Button "+" */}
+      <Link
+        href="/scan"
+        className="fixed bottom-6 right-6 w-14 h-14 bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 rounded-full flex items-center justify-center shadow-xl hover:scale-105 transition-all z-40 hover:rotate-90 duration-300 animate-pulse hover:animate-none"
+        style={{ boxShadow: '0 8px 30px rgba(245, 158, 11, 0.3)' }}
+      >
+        <Plus className="w-7 h-7 stroke-[3]" />
+      </Link>
+      
     </main>
   );
 }
