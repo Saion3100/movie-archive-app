@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { getTickets, saveTicket, isSupabaseConfigured, MovieTicket } from '../utils/db';
-import { Plus, Camera, PieChart, Star, MapPin, Calendar, Film, Award, Sparkles, Database } from 'lucide-react';
+import { Plus, Camera, PieChart, Film, Database } from 'lucide-react';
 
 const INITIAL_MOCK_TICKETS = [
   {
@@ -17,8 +17,6 @@ const INITIAL_MOCK_TICKETS = [
     seat_raw: 'E-10',
     seat_row: 'E',
     seat_number: 10,
-    rating: 4.5,
-    memo: 'コナンのアクションが凄まじかった！イースト4のE列は視線が少し上向きになるけどスクリーンが近くて迫力満点。',
     raw_ocr_text: '8001260413023900100443444'
   },
   {
@@ -31,8 +29,6 @@ const INITIAL_MOCK_TICKETS = [
     seat_raw: 'J-12',
     seat_row: 'J',
     seat_number: 12,
-    rating: 5.0,
-    memo: 'ついに完結。新宿TOHOのスクリーン7の中央J列は目の高さがスクリーン中央と完全に一致するベストポジション！',
     raw_ocr_text: 'ＴＯＨＯシネマズ新宿\nスクリーン7\nJ-12\n一般'
   },
   {
@@ -45,8 +41,6 @@ const INITIAL_MOCK_TICKETS = [
     seat_raw: 'F-8',
     seat_row: 'F',
     seat_number: 8,
-    rating: 4.5,
-    memo: 'IMAXの爆音でフュリオサの怒りが轟いた。シアター3のF列は結構前寄りだけど、視界いっぱいにスクリーンが広がって超没入できる！',
     raw_ocr_text: '109シネマズ二子玉川\nシアター3\nF-8\nIMAX'
   }
 ];
@@ -62,7 +56,18 @@ export default function DashboardPage() {
         const isSupa = isSupabaseConfigured();
         setDbType(isSupa ? 'Supabase' : 'LocalStorage');
 
-        let loadedTickets = await getTickets();
+        // APIエンドポイント経由でチケット取得（サーバー保存データと同期）
+        let loadedTickets: MovieTicket[] = [];
+        try {
+          const res = await fetch('/api/tickets');
+          if (res.ok) {
+            const data = await res.json();
+            loadedTickets = data.tickets || [];
+          }
+        } catch {
+          // API失敗時はLocalStorageから取得
+          loadedTickets = await getTickets();
+        }
         
         // If empty, populate initial mock tickets for amazing first experience!
         if (loadedTickets.length === 0) {
@@ -70,7 +75,16 @@ export default function DashboardPage() {
           for (const item of INITIAL_MOCK_TICKETS) {
             await saveTicket(item);
           }
-          loadedTickets = await getTickets();
+          // 再度API取得
+          try {
+            const res = await fetch('/api/tickets');
+            if (res.ok) {
+              const data = await res.json();
+              loadedTickets = data.tickets || [];
+            }
+          } catch {
+            loadedTickets = await getTickets();
+          }
         }
         
         setTickets(loadedTickets);
@@ -238,17 +252,10 @@ export default function DashboardPage() {
                         </div>
                       )}
                       
-                      {/* Top Overlay Badge for date & rating */}
+                      {/* Top Overlay Badge for date */}
                       <div className="absolute top-2 left-2 flex flex-col gap-1 z-10">
                         <span className="text-[9px] bg-slate-950/80 backdrop-blur-md text-amber-400 px-1.5 py-0.5 rounded font-bold font-mono shadow-md border border-slate-900">
                           {dateStr}
-                        </span>
-                      </div>
-                      
-                      <div className="absolute top-2 right-2 z-10">
-                        <span className="text-[9px] bg-slate-950/80 backdrop-blur-md text-slate-200 px-1.5 py-0.5 rounded font-bold font-mono shadow-md border border-slate-900 flex items-center gap-0.5">
-                          <Star className="w-2.5 h-2.5 text-amber-500 fill-amber-500 shrink-0" />
-                          {ticket.rating.toFixed(1)}
                         </span>
                       </div>
                     </div>
@@ -277,16 +284,7 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Setup API Key Instructions Box */}
-        <div className="bg-slate-900/30 border border-slate-900 rounded-3xl p-4 space-y-3">
-          <div className="flex items-center gap-2 text-slate-400">
-            <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-            <h3 className="text-xs font-bold uppercase tracking-wider">設定・キーガイド</h3>
-          </div>
-          <p className="text-[10px] text-slate-500 leading-relaxed">
-            現在、キーが未設定のため**ローカル模擬モード**で動作しています。本番環境でGoogle Vision OCRやTMDb APIを接続するには、ルートディレクトリに `.env.local` ファイルを作成し、必要なAPIキーを設定してください。詳細は <code className="text-amber-500 font-mono">README.md</code> をご参照ください。
-          </p>
-        </div>
+
 
       </div>
 

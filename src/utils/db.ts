@@ -12,8 +12,8 @@ export interface MovieTicket {
   seat_raw: string | null;
   seat_row: string | null;
   seat_number: number | null;
-  rating: number; // 0 to 5
-  memo: string | null;
+  rating?: number; // 0 to 5 (Deprecated: UI removed)
+  memo?: string | null; // (Deprecated: UI removed)
   raw_ocr_text: string | null;
   created_at?: string;
 }

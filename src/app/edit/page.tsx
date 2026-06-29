@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Sparkles, Star, Film, MapPin, Calendar, CreditCard, AlignLeft, Check } from 'lucide-react';
+import { ArrowLeft, Sparkles, Film, MapPin, Calendar, CreditCard, Check } from 'lucide-react';
 
 interface TMDBMovie {
   id: number;
@@ -30,8 +30,7 @@ export default function EditPage() {
   const [showTimestamp, setShowTimestamp] = useState(''); // YYYY-MM-DDTHH:mm
   const [seatRow, setSeatRow] = useState('');
   const [seatNumber, setSeatNumber] = useState('');
-  const [rating, setRating] = useState(4.0);
-  const [memo, setMemo] = useState('');
+
   const [rawOcrText, setRawOcrText] = useState('');
 
   // Initial load from session storage
@@ -113,6 +112,7 @@ export default function EditPage() {
     const seatRawCombined = row && num ? `${row}-${num}` : row || num || null;
 
     const payload = {
+      user_id: '00000000-0000-0000-0000-000000000000',
       theater_name: theaterName.trim() || '未特定の劇場',
       screen_name: screenName.trim() || null,
       show_timestamp: showTimestamp ? new Date(showTimestamp).toISOString() : new Date().toISOString(),
@@ -121,8 +121,6 @@ export default function EditPage() {
       seat_raw: seatRawCombined,
       seat_row: row || null,
       seat_number: num ? parseInt(num, 10) : null,
-      rating,
-      memo: memo.trim() || null,
       raw_ocr_text: rawOcrText || null
     };
 
@@ -351,60 +349,7 @@ export default function EditPage() {
             </div>
           </div>
 
-          {/* Section 4: Rating & Memo */}
-          <div className="bg-slate-900/50 border border-slate-800 rounded-3xl p-5 space-y-4">
-            <div className="flex items-center gap-2 text-amber-500">
-              <AlignLeft className="w-4 h-4" />
-              <h2 className="text-xs font-bold uppercase tracking-wider">4. 体験ログ (評価・メモ)</h2>
-            </div>
 
-            <div className="space-y-4">
-              {/* Star Rating Widget */}
-              <div className="space-y-2 flex flex-col items-center py-2">
-                <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">星評価: {rating.toFixed(1)} / 5.0</label>
-                <div className="flex items-center gap-1.5">
-                  {[1, 2, 3, 4, 5].map((starIndex) => {
-                    const diff = rating - starIndex;
-                    let fillPercent = '0%';
-                    if (diff >= 0) fillPercent = '100%';
-                    else if (diff === -0.5) fillPercent = '50%';
-
-                    return (
-                      <div key={starIndex} className="relative cursor-pointer select-none group" style={{ width: '32px', height: '32px' }}>
-                        {/* Interactive invisible halves */}
-                        <div 
-                          onClick={() => setRating(starIndex - 0.5)}
-                          className="absolute left-0 top-0 w-1/2 h-full z-10" 
-                        />
-                        <div 
-                          onClick={() => setRating(starIndex)}
-                          className="absolute right-0 top-0 w-1/2 h-full z-10" 
-                        />
-                        
-                        {/* SVG Stars */}
-                        <Star className="w-8 h-8 text-slate-800 absolute top-0 left-0" />
-                        <div className="overflow-hidden absolute top-0 left-0 h-full pointer-events-none" style={{ width: fillPercent }}>
-                          <Star className="w-8 h-8 text-amber-400 fill-amber-400 max-w-none" />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Memo */}
-              <div className="space-y-1">
-                <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">ひと言メモ</label>
-                <textarea
-                  value={memo}
-                  onChange={(e) => setMemo(e.target.value)}
-                  rows={3}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-4 py-3 text-xs text-slate-200 focus:outline-none focus:border-amber-500 resize-none"
-                  placeholder="上映中の映画の感想や、劇場の雰囲気など..."
-                />
-              </div>
-            </div>
-          </div>
 
           {/* Submit Button */}
           <button

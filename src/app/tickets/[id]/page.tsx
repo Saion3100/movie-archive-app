@@ -4,8 +4,8 @@
 import { useState, useEffect, use } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { getTicketById, deleteTicket, MovieTicket } from '../../../utils/db';
-import { ArrowLeft, Share2, Trash2, Calendar, MapPin, Film, Star, Check, Award } from 'lucide-react';
+import { deleteTicket, MovieTicket } from '../../../utils/db';
+import { ArrowLeft, Share2, Trash2, Calendar, MapPin, Film, Check, Award } from 'lucide-react';
 
 interface TicketDetailPageProps {
   params: Promise<{ id: string }>;
@@ -23,6 +23,17 @@ export default function TicketDetailPage({ params }: TicketDetailPageProps) {
   useEffect(() => {
     async function loadTicket() {
       try {
+        // まずAPIエンドポイント経由で取得を試みる（サーバーサイドで保存されたデータ含む）
+        const res = await fetch(`/api/tickets/${id}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.ticket) {
+            setTicket(data.ticket);
+            return;
+          }
+        }
+        // フォールバック: LocalStorageから直接取得（ゲストモード互換）
+        const { getTicketById } = await import('../../../utils/db');
         const data = await getTicketById(id);
         if (!data) {
           setError('指定されたチケットが見つかりませんでした。');
@@ -51,7 +62,7 @@ export default function TicketDetailPage({ params }: TicketDetailPageProps) {
 
   const handleShare = async () => {
     if (!ticket) return;
-    const shareText = `映画「${ticket.movie_title}」のデジタル半券をアーカイブしました！ 劇場: ${ticket.theater_name} / 座席: ${ticket.seat_raw || '自由席'} ★${ticket.rating.toFixed(1)}`;
+    const shareText = `映画「${ticket.movie_title}」のデジタル半券をアーカイブしました！ 劇場: ${ticket.theater_name} / 座席: ${ticket.seat_raw || '自由席'}`;
     const shareUrl = window.location.href;
 
     if (navigator.share) {
@@ -228,36 +239,7 @@ export default function TicketDetailPage({ params }: TicketDetailPageProps) {
               </div>
             </div>
 
-            {/* Row 4: Star Rating */}
-            <div className="border-t border-slate-800/60 pt-4 flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                {[1, 2, 3, 4, 5].map((starIndex) => {
-                  const diff = ticket.rating - starIndex;
-                  const isFilled = diff >= 0;
-                  const isHalf = diff === -0.5;
 
-                  return (
-                    <div key={starIndex} className="relative w-4 h-4 select-none pointer-events-none">
-                      <Star className="w-4 h-4 text-slate-800 absolute top-0 left-0" />
-                      {isFilled && <Star className="w-4 h-4 text-amber-400 fill-amber-400 absolute top-0 left-0" />}
-                      {isHalf && (
-                        <div className="overflow-hidden absolute top-0 left-0 h-full w-1/2">
-                          <Star className="w-4 h-4 text-amber-400 fill-amber-400 max-w-none" />
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-              <span className="text-xs font-bold text-slate-400 font-mono">★{ticket.rating.toFixed(1)}</span>
-            </div>
-
-            {/* Row 5: User Memo */}
-            {ticket.memo && (
-              <div className="bg-slate-950/40 border border-slate-800/60 rounded-2xl p-3 text-xs text-slate-400 italic leading-relaxed">
-                "{ticket.memo}"
-              </div>
-            )}
 
           </div>
         </div>
